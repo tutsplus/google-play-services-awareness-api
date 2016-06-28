@@ -1,14 +1,19 @@
 package com.tutsplus.awarenessapi;
 
 import android.Manifest;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
+import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
@@ -16,6 +21,11 @@ import android.widget.ArrayAdapter;
 import android.widget.ListView;
 
 import com.google.android.gms.awareness.Awareness;
+import com.google.android.gms.awareness.fence.AwarenessFence;
+import com.google.android.gms.awareness.fence.DetectedActivityFence;
+import com.google.android.gms.awareness.fence.FenceState;
+import com.google.android.gms.awareness.fence.FenceUpdateRequest;
+import com.google.android.gms.awareness.fence.LocationFence;
 import com.google.android.gms.awareness.snapshot.DetectedActivityResult;
 import com.google.android.gms.awareness.snapshot.HeadphoneStateResult;
 import com.google.android.gms.awareness.snapshot.LocationResult;
@@ -36,12 +46,16 @@ public class MainActivity extends AppCompatActivity implements
         GoogleApiClient.OnConnectionFailedListener,
         AdapterView.OnItemClickListener{
 
+    private final static String ACTION_FENCE = "action_fence";
     private final static int REQUEST_PERMISSION_RESULT_CODE = 42;
+    private final static String KEY_SITTING_AT_HOME = "sitting_at_home";
 
     private ListView mListView;
     private String[] mItems;
 
     private GoogleApiClient mGoogleApiClient;
+
+    private FenceBroadcastReceiver mFenceBroadcastReceiver;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,7 +70,6 @@ public class MainActivity extends AppCompatActivity implements
                 .enableAutoManage(this, this)
                 .build();
         mGoogleApiClient.connect();
-
     }
 
     private void initViews() {
@@ -161,7 +174,23 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     private void createFence() {
-        
+        checkLocationPermission();
+
+        AwarenessFence activityFence = DetectedActivityFence.during(DetectedActivityFence.STILL);
+        AwarenessFence homeFence = LocationFence.in(39.92, -105.7, 100000, 1000 );
+
+        AwarenessFence sittingAtHomeFence = AwarenessFence.and(homeFence, activityFence);
+
+        Intent intent = new Intent(ACTION_FENCE);
+        PendingIntent fencePendingIntent = PendingIntent.getBroadcast(this, 0, intent, 0);
+
+        mFenceBroadcastReceiver = new FenceBroadcastReceiver();
+        registerReceiver(mFenceBroadcastReceiver, new IntentFilter(ACTION_FENCE));
+
+        FenceUpdateRequest.Builder builder = new FenceUpdateRequest.Builder();
+        builder.addFence( KEY_SITTING_AT_HOME, sittingAtHomeFence, fencePendingIntent );
+
+        Awareness.FenceApi.updateFences( mGoogleApiClient, builder.build() );
     }
 
     private boolean checkLocationPermission() {
@@ -217,6 +246,39 @@ public class MainActivity extends AppCompatActivity implements
             createFence();
         } else if( mItems[position].equalsIgnoreCase( getString(R.string.item_snapshot_activity))) {
             detectActivity();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        Awareness.FenceApi.updateFences(
+                mGoogleApiClient,
+                new FenceUpdateRequest.Builder()
+                        .removeFence(KEY_SITTING_AT_HOME)
+                        .build());
+
+        if (mFenceBroadcastReceiver != null) {
+            unregisterReceiver(mFenceBroadcastReceiver);
+        }
+
+        super.onPause();
+    }
+
+    public class FenceBroadcastReceiver extends BroadcastReceiver {
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if(TextUtils.equals(ACTION_FENCE, intent.getAction())) {
+                FenceState fenceState = FenceState.extract(intent);
+
+                if( TextUtils.equals(KEY_SITTING_AT_HOME, fenceState.getFenceKey() ) ) {
+                    if( fenceState.getCurrentState() == FenceState.TRUE ) {
+                        Log.e("Tuts+", "You've been sitting at home for too long");
+                    }
+                } else {
+                    Log.e("Tuts+", "Some other state in the receiver");
+                }
+            }
         }
     }
 }
