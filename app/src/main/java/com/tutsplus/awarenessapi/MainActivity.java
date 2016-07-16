@@ -26,11 +26,13 @@ import com.google.android.gms.awareness.fence.DetectedActivityFence;
 import com.google.android.gms.awareness.fence.FenceState;
 import com.google.android.gms.awareness.fence.FenceUpdateRequest;
 import com.google.android.gms.awareness.fence.LocationFence;
+import com.google.android.gms.awareness.snapshot.BeaconStateResult;
 import com.google.android.gms.awareness.snapshot.DetectedActivityResult;
 import com.google.android.gms.awareness.snapshot.HeadphoneStateResult;
 import com.google.android.gms.awareness.snapshot.LocationResult;
 import com.google.android.gms.awareness.snapshot.PlacesResult;
 import com.google.android.gms.awareness.snapshot.WeatherResult;
+import com.google.android.gms.awareness.state.BeaconState;
 import com.google.android.gms.awareness.state.HeadphoneState;
 import com.google.android.gms.awareness.state.Weather;
 import com.google.android.gms.common.ConnectionResult;
@@ -38,16 +40,25 @@ import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.location.ActivityRecognitionResult;
 import com.google.android.gms.location.DetectedActivity;
+import com.google.android.gms.location.places.Place;
 import com.google.android.gms.location.places.PlaceLikelihood;
 
+import java.util.Arrays;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity implements
         GoogleApiClient.OnConnectionFailedListener,
         AdapterView.OnItemClickListener{
 
+    private static final List BEACON_TYPE_FILTERS = Arrays.asList(
+            BeaconState.TypeFilter.with(
+                    "tutsplusawarenessnamespace", //Replace this with your own app's Google project name
+                    "nearby") );
+
     private final static String ACTION_FENCE = "action_fence";
+
     private final static int REQUEST_PERMISSION_RESULT_CODE = 42;
+
     private final static String KEY_SITTING_AT_HOME = "sitting_at_home";
 
     private ListView mListView;
@@ -80,6 +91,31 @@ public class MainActivity extends AppCompatActivity implements
         mListView.setOnItemClickListener(this);
     }
 
+    private void detectBeacons() {
+        if( !checkLocationPermission() ) {
+            return;
+        }
+
+        Awareness.SnapshotApi.getBeaconState(mGoogleApiClient, BEACON_TYPE_FILTERS)
+                .setResultCallback(new ResultCallback<BeaconStateResult>() {
+                    @Override
+                    public void onResult(@NonNull BeaconStateResult beaconStateResult) {
+                        if (!beaconStateResult.getStatus().isSuccess()) {
+                            Log.e("Test", "Could not get beacon state.");
+                            return;
+                        }
+                        BeaconState beaconState = beaconStateResult.getBeaconState();
+                        if( beaconState == null ) {
+                            Log.e("Tuts+", "beacon state is null");
+                        } else {
+                            for(BeaconState.BeaconInfo info : beaconState.getBeaconInfo()) {
+                                Log.e("Tuts+", new String(info.getContent()));
+                            }
+                        }
+                    }
+                });
+    }
+
     private void detectHeadphones() {
         Awareness.SnapshotApi.getHeadphoneState(mGoogleApiClient)
                 .setResultCallback(new ResultCallback<HeadphoneStateResult>() {
@@ -102,12 +138,10 @@ public class MainActivity extends AppCompatActivity implements
                     public void onResult(@NonNull DetectedActivityResult detectedActivityResult) {
                         ActivityRecognitionResult result = detectedActivityResult.getActivityRecognitionResult();
                         Log.e("Tuts+", "time: " + result.getTime());
-                        Log.e("Tuts+", "elapsed time: " + result.getElapsedRealtimeMillis() );
-                        Log.e("Tuts+", result.getMostProbableActivity().toString());
-                        DetectedActivity activity;
-                        for( int i = 0; i < result.getProbableActivities().size(); i++ ) {
-                            activity = result.getProbableActivities().get(i);
-                            //getType matches up to static values in DetectedActivity
+                        Log.e("Tuts+", "elapsed time: " + result.getElapsedRealtimeMillis());
+                        Log.e("Tuts+", "Most likely activity: " + result.getMostProbableActivity().toString());
+
+                        for( DetectedActivity activity : result.getProbableActivities() ) {
                             Log.e("Tuts+", "Activity: " + activity.getType() + " Liklihood: " + activity.getConfidence() );
                         }
                     }
@@ -127,7 +161,23 @@ public class MainActivity extends AppCompatActivity implements
                     @Override
                     public void onResult(@NonNull LocationResult locationResult) {
                         Location location = locationResult.getLocation();
+
                         Log.e("Tuts+", "Latitude: " + location.getLatitude() + ", Longitude: " + location.getLongitude());
+
+                        Log.e("Tuts+", "Provider: " + location.getProvider() + " time: " + location.getTime());
+
+                        if( location.hasAccuracy() ) {
+                            Log.e("Tuts+", "Accuracy: " + location.getAccuracy());
+                        }
+                        if( location.hasAltitude() ) {
+                            Log.e("Tuts+", "Altitude: " + location.getAltitude());
+                        }
+                        if( location.hasBearing() ) {
+                            Log.e("Tuts+", "Bearing: " + location.getBearing());
+                        }
+                        if( location.hasSpeed() ) {
+                            Log.e("Tuts+", "Speed: " + location.getSpeed());
+                        }
                     }
                 });
     }
@@ -141,11 +191,12 @@ public class MainActivity extends AppCompatActivity implements
                 .setResultCallback(new ResultCallback<PlacesResult>() {
                     @Override
                     public void onResult(@NonNull PlacesResult placesResult) {
-                        List<PlaceLikelihood> placeLikelihoodList = placesResult.getPlaceLikelihoods();
-                        PlaceLikelihood place;
-                        for (int i = 0; i < placeLikelihoodList.size(); i++) {
-                            place = placeLikelihoodList.get(i);
-                            Log.e("Tuts+", place.getPlace().getName().toString() + ", likelihood: " + place.getLikelihood());
+                        Place place;
+                        for( PlaceLikelihood placeLikelihood : placesResult.getPlaceLikelihoods() ) {
+                            place = placeLikelihood.getPlace();
+                            Log.e("Tuts+", place.getName().toString() + "\n" + place.getAddress().toString() );
+                            Log.e("Tuts+", "Rating: " + place.getRating() );
+                            Log.e("Tuts+", "Likelihood that the user is here: " + placeLikelihood.getLikelihood() * 100 + "%");
                         }
                     }
                 });
@@ -166,8 +217,8 @@ public class MainActivity extends AppCompatActivity implements
                         Log.e("Tuts+", "Dew point: " + weather.getDewPoint(Weather.FAHRENHEIT));
                         Log.e("Tuts+", "Humidity: " + weather.getHumidity() );
 
-                        if( weather.getConditions()[0] == Weather.CONDITION_CLEAR ) {
-                            Log.e("Tuts+", "It's clear out!");
+                        if( weather.getConditions()[0] == Weather.CONDITION_CLOUDY ) {
+                            Log.e("Tuts+", "Looks like there's some clouds out there");
                         }
                     }
                 });
@@ -188,7 +239,7 @@ public class MainActivity extends AppCompatActivity implements
         registerReceiver(mFenceBroadcastReceiver, new IntentFilter(ACTION_FENCE));
 
         FenceUpdateRequest.Builder builder = new FenceUpdateRequest.Builder();
-        builder.addFence( KEY_SITTING_AT_HOME, sittingAtHomeFence, fencePendingIntent );
+        builder.addFence(KEY_SITTING_AT_HOME, sittingAtHomeFence, fencePendingIntent);
 
         Awareness.FenceApi.updateFences( mGoogleApiClient, builder.build() );
     }
@@ -246,6 +297,9 @@ public class MainActivity extends AppCompatActivity implements
             createFence();
         } else if( mItems[position].equalsIgnoreCase( getString(R.string.item_snapshot_activity))) {
             detectActivity();
+        } else if( mItems[position].equalsIgnoreCase( getString(R.string.item_snapshot_beacons))) {
+            detectBeacons();
+            //This method will break if you don't have a beacon registered under your google api console
         }
     }
 
@@ -275,8 +329,6 @@ public class MainActivity extends AppCompatActivity implements
                     if( fenceState.getCurrentState() == FenceState.TRUE ) {
                         Log.e("Tuts+", "You've been sitting at home for too long");
                     }
-                } else {
-                    Log.e("Tuts+", "Some other state in the receiver");
                 }
             }
         }

@@ -6,6 +6,7 @@
         <item>@string/item_snapshot_location</item>
         <item>@string/item_snapshot_places</item>
         <item>@string/item_snapshot_weather</item>
+        <item>@string/item_snapshot_beacons</item>
         <item>@string/item_fence</item>
     </array>
 </resources>

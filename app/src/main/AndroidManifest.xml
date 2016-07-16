@@ -17,7 +17,7 @@
             android:name="com.google.android.awareness.API_KEY"
             android:value="@string/google_play_services_key" />
 
-        <!-- places declaration -->
+        <!-- places/location declaration -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="@string/google_play_services_key" />
